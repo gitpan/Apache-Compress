@@ -1,6 +1,7 @@
 use strict;
 use lib 't/lib';  # distributed here until changes are incorporated into the real version
 use Apache::test qw(test);
+use Test;
 
 my %requests = 
   (
@@ -16,12 +17,19 @@ my %special_tests =
    3 => {content => \&decomp}, 
   );
 
-use vars qw($TEST_NUM);
-print "1.." . (1 + keys %requests) . "\n";
-test ++$TEST_NUM, 1; # Loaded successfully
+plan tests => 1+keys(%requests);
+ok 1;
 
 foreach my $testnum (sort {$a<=>$b} keys %requests) {
-  &test_outcome(Apache::test->fetch($requests{$testnum}), $testnum);
+  my $response = Apache::test->fetch($requests{$testnum});
+  my $content = $response->content;
+  
+  if ($special_tests{$testnum}{content}) {
+    $content = $special_tests{$testnum}{content}->($content);
+  }
+  unless (ok $content, scalar `cat t/check/$testnum`) {
+    print $response->headers_as_string();
+  }
 }
 
 ######################################################################
@@ -40,18 +48,4 @@ sub decomp {
   
   unlink $file;
   return $buffer;
-}
-
-sub test_outcome {
-  my ($response, $i) = @_;
-  my $content = $response->content;
-  
-  my $expected;
-  if ($special_tests{$i}{content}) {
-    $content = $special_tests{$i}{content}->($content);
-  }
-  my $ok = $content eq ($expected = `cat t/check/$i`);
-  Apache::test->test(++$TEST_NUM, $ok);
-  my $headers = $response->headers_as_string();
-  print "$i Result:\n$content\n$i Expected: $expected\n" if ($ENV{TEST_VERBOSE} and not $ok);
 }

@@ -147,7 +147,8 @@ sub _read_existing_conf {
     close SERVER_CONF;
     
     my @modules       =   grep /^\s*(Add|Load)Module/, @lines;
-    my ($server_root) = (map /^\s*ServerRoot\s*(\S+)/, @lines);
+    my ($server_root) = (map /^\s*ServerRoot\s*(\S+|"[^"]+")/, @lines);
+    $server_root =~ s/^"|"$//g;
 
     # Rewrite all modules to load from an absolute path.
     foreach (@modules) {
@@ -181,7 +182,7 @@ sub _read_existing_conf {
        warn "Warning: couldn't find anything to load for 'mod_$module'.\n";
     }
     
-    print "Adding the following dynamic config lines: \n@modules";
+    print "Adding the following dynamic config lines: \n @modules";
     return join '', @modules;
 }
 

@@ -6,12 +6,13 @@ use Apache::File;
 use Apache::Constants qw(:common);
 use vars qw($VERSION);
 
-$VERSION = sprintf '%d.%03d', q$Revision: 1.3 $ =~ /: (\d+).(\d+)/;
+$VERSION = '1.004';
 
 sub handler {
   my $r = shift;
+  
+  my $can_gzip = can_gzip($r);
 
-  my $can_gzip = $r->header_in('Accept-Encoding') =~ /gzip/;
   my $filter   = lc $r->dir_config('Filter') eq 'on';
   #warn "can_gzip=$can_gzip, filter=$filter";
   return DECLINED unless $can_gzip or $filter;
@@ -19,8 +20,8 @@ sub handler {
   # Other people's eyes need to check this 1.1 stuff.
   if ($r->protocol =~ /1\.1/) {
     my %vary = map {$_,1} qw(Accept-Encoding User-Agent);
-    if (my @vary = $r->header_out('Vary')) {
-      @vary{@vary} = ();
+    if (my $vary = $r->header_out('Vary')||0) {
+      $vary{$vary} = 1;
     }
     $r->header_out('Vary' => join ',', keys %vary);
   }
@@ -37,8 +38,7 @@ sub handler {
   if ($can_gzip) {
     $r->content_encoding('gzip');
     $r->send_http_header;
-    local $/;
-    print Compress::Zlib::memGzip(<$fh>);
+    $r->print( Compress::Zlib::memGzip(do {local $/; <$fh>}) );
   } else {
     $r->send_http_header;
     $r->send_fd($fh);
@@ -47,23 +47,39 @@ sub handler {
   return OK;
 }
 
+sub can_gzip {
+  my $r = shift;
+
+  my $how_decide = $r->dir_config('CompressDecision');
+  if (!defined($how_decide) || lc($how_decide) eq 'header') {
+    return +($r->header_in('Accept-Encoding')||'') =~ /gzip/;
+  } elsif (lc($how_decide) eq 'user-agent') {
+    return guess_by_user_agent($r->header_in('User-Agent'));
+  }
+  
+  die "Unrecognized value '$how_decide' specified for CompressDecision";
+}
+  
+sub guess_by_user_agent {
+  # This comes from Andreas' Apache::GzipChain.  It's very out of
+  # date, though, I'd like it if someone sent me a better regex.
+
+  my $ua = shift;
+  return $ua =~  m{
+		   ^Mozilla/            # They all start with Mozilla...
+		   \d+\.\d+             # Version string
+		   [\s\[\]\w\-]+        # Language
+		   (?:
+		    \(X11               # Any unix browser should work
+		    |             
+		    Macint.+PPC,\sNav   # Does this match anything??
+		   )
+		  }x;
+}
+
+
 1;
 
-
-#  my $user_agent = $r->header_in('User-Agent');
-#  
-#  unless ($can_gzip) {
-#    $can_gzip = 1 if $user_agent =~ 
-#      m{
-#        ^Mozilla/
-#        \d+\.\d+
-#        [\s\[\]\w\-]+
-#        (?:
-#         \(X11 |
-#         Macint.+PPC,\sNav
-#        )
-#       }x;
-#  }
 
 # Verbose version:
 #    my $content = do {local $/; <$fh>};
@@ -84,7 +100,8 @@ Apache::Compress - Auto-compress web files with Gzip
 
   PerlModule Apache::Compress
   
-  # Compress regular files
+  # Compress regular files - decides whether to compress by
+  # examining the Accept-Encoding header
   <FilesMatch "\.blah$">
    PerlHandler Apache::Compress
   </FilesMatch>
@@ -95,17 +112,36 @@ Apache::Compress - Auto-compress web files with Gzip
    PerlSetVar Filter on
    PerlHandler Apache::RegistryFilter Apache::Compress
   </FilesMatch>
+  
+  # Guess based on user-agent
+  <FilesMatch "\.blah$">
+   PerlSetVar CompressDecision User-Agent
+   PerlHandler Apache::Compress
+  </FilesMatch>
 
 =head1 DESCRIPTION
 
 This module lets you send the content of an HTTP response as
 gzip-compressed data.  Certain browsers (Netscape, IE) can request
-content compression via the C<Content-Encoding> header.  This can
+content compression via the C<Accept-Encoding> header.  This can
 speed things up if you're sending large files to your users through
 slow connections.
 
 Browsers that don't request gzipped data will receive regular
 noncompressed data.
+
+Apparently some older browsers (and maybe even some newer ones)
+actually support gzip encoding, but don't send the C<Accept-Encoding>
+header.  If you want to try to guess which browsers these are and
+encode the content anyway, you can set the C<CompressDecision>
+variable to C<User-Agent>.  The default C<CompressDecision> value is
+C<Header>, which means it will only look at the incoming
+C<Accept-Encoding> header.
+
+Note that the browser-guessing is currently using a regular expression
+that I don't think is very good, but I don't know what user agents to
+support and which not to.  Please send me information if you have any,
+especially in the form of a patch. =)
 
 This module is compatibile with Apache::Filter, so you can compress
 the output of other content-generators.
@@ -120,7 +156,7 @@ a small cost to the compression ratio).  See Eagle book, p.185.
 
 =head1 AUTHOR
 
-Ken Williams, ken@forum.swarthmore.edu
+Ken Williams, KWILLIAMS@cpan.org
 
 Partially based on the work of several modules, like Doug MacEachern's
 Apache::Gzip (in the Eagle book but not on CPAN), Andreas Koenig's

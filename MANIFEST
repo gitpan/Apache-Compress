@@ -1,8 +1,9 @@
+Build.PL
 Changes
 Compress.pm
-MANIFEST
 Makefile.PL
-README
+MANIFEST
+META.yml
 t/check/2
 t/check/3
 t/docs/simple.html

@@ -29,6 +29,7 @@ WriteMakefile
    'PREREQ_PM' => {
                    'Compress::Zlib' => '1.08',
                   },
+   'PL_FILES' => {},
    'clean' => {FILES => 't/httpd t/httpd.conf t/error_log'},
   );
 
