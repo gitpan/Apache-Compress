@@ -26,6 +26,9 @@ WriteMakefile
                        "cp -f Changes README $dir-\$(VERSION); "
                       ),
              },
+   'PREREQ_PM' => {
+                   'Compress::Zlib' => '1.08',
+                  },
    'clean' => {FILES => 't/httpd t/httpd.conf t/error_log'},
   );
 

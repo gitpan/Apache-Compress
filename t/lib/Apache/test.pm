@@ -44,12 +44,10 @@ unless (defined &Apache::bootstrap) {
     *Apache::Constants::bootstrap = sub {};
 }
 
-################ Methods that happen at "perl Makefile.PL" time ###############
-
 sub write_httpd_conf {
     my $pkg = shift;
     my %args = (conf_file => 't/httpd.conf', @_);
-    chomp (my $DIR = `pwd`);
+    my $DIR = `pwd`; chomp $DIR;
 
     local *CONF;
     open CONF, ">$args{conf_file}" or die "Can't create $args{conf_file}: $!";
@@ -75,55 +73,15 @@ ScoreBoardFile /dev/null
 AddType text/html .html
 
 # Look in ./blib/lib
+#PerlModule ExtUtils::testlib
 <Perl>
- use lib "$DIR/blib/lib";
+ use lib "$DIR/blib/lib", "$DIR/t/lib";
 </Perl>
-#PerlSetEnv PERL5LIB $DIR/blib/lib
 
 $args{include}
 EOF
 
     return 1;
-}
-
-sub MM_test {
-    # Writes the test section for the Makefile
-    shift();  # Don't need package name
-    my %conf = @_;
-
-    my $section = <<EOF;
-TEST_VERBOSE=0
-TEST_TYPE=test_\$(LINKTYPE)
-TEST_FILE = test.pl
-TEST_FILES = t/*.t
-TESTDB_SW = -d
-
-#test:	start_httpd run_tests   kill_httpd
-
-test :: pure_all start_httpd run_tests   kill_httpd
-
-testdb:	start_httpd run_testsdb kill_httpd
-
-kill_httpd:
-	kill `cat t/httpd.pid`
-
-start_httpd:
-	t/httpd -f `pwd`/t/httpd.conf
-
-run_tests :: pure_all
-	PERL_DL_NONLAZY=1 PORT=$conf{port}
-EOF
-    chomp $section;
-
-    $section .= <<'EOF';
- $(FULLPERL) -I$(INST_ARCHLIB) -I$(INST_LIB) -I$(PERL_ARCHLIB) -I$(PERL_LIB) -e 'use Test::Harness qw(&runtests $$verbose); $$verbose=$(TEST_VERBOSE); runtests @ARGV;' $(TEST_FILES)
-
-run_testsdb :: pure_all
-	PERL_DL_NONLAZY=1 $(FULLPERL) $(TESTDB_SW) -I$(INST_ARCHLIB) -I$(INST_LIB) -I$(PERL_ARCHLIB) -I$(PERL_LIB) $(TEST_FILE)
-
-EOF
-
-    return $section;
 }
 
 sub _ask {
@@ -180,13 +138,12 @@ sub get_test_params {
 }
 
 sub _read_existing_conf {
-    # Returns some config text 
-    shift;
-    my ($server_conf) = @_;
-    
+    # Returns some "(Add|Load)Module" config lines, generated from the
+    # existing config file and a few must-have modules.
+    my ($self, $server_conf) = @_;
     
     open SERVER_CONF, $server_conf or die "Couldn't open $server_conf: $!";
-    my @lines = grep {!m/^\s*#/} <SERVER_CONF>;
+    my @lines = grep {!m/^\s*\#/} <SERVER_CONF>;
     close SERVER_CONF;
     
     my @modules       =   grep /^\s*(Add|Load)Module/, @lines;
@@ -197,38 +154,44 @@ sub _read_existing_conf {
 	s!(\s)([^/\s]\S+/)!$1$server_root/$2!;
     }
     
-    # Directories where apache DSOs live.
-    my (@module_dirs) = map {m,(/\S*/),} @modules;
-    
-    # Have to make sure that dir, autoindex and perl are loaded.
-    my @required  = qw(dir autoindex perl);
-    
-    my @l = `t/httpd -l`;
-    my @compiled_in = map /^\s*(\S+)/, @l[1..@l-2];
+    my $static_mods = $self->static_modules('t/httpd');
     
     my @load;
-    foreach my $module (@required) {
-	if (!grep /$module/i, @compiled_in, @modules) {
+    # Have to make sure that dir, autoindex and perl are loaded.
+    foreach my $module (qw(dir autoindex perl)) {
+       unless ($static_mods->{"mod_$module"} or grep /$module/i, @modules) {
+           warn "Will attempt to load mod_$module dynamically.\n";
 	    push @load, $module;
 	}
     }
+    
+    # Directories where apache DSOs live.
+    my @module_dirs = map {m,(/\S*/),} @modules;
     
     # Finally compute the directives to load modules that need to be loaded.
  MODULE:
     foreach my $module (@load) {
 	foreach my $module_dir (@module_dirs) {
-	    if (-e "$module_dir/mod_$module.so") {
-		push @modules, "LoadModule ${module}_module $module_dir/mod_$module.so\n"; next MODULE;
-	    } elsif (-e "$module_dir/lib$module.so") {
-		push @modules, "LoadModule ${module}_module $module_dir/lib$module.so\n"; next MODULE;
-	    } elsif (-e "$module_dir/ApacheModule\u$module.dll") {
-		push @modules, "LoadModule ${module}_module $module_dir/ApacheModule\u$module.dll\n"; next MODULE;
+           foreach my $filename ("mod_$module.so", "lib$module.so", "ApacheModule\u$module.dll") {
+               if (-e "$module_dir/$filename") {
+                   push @modules, "LoadModule ${module}_module $module_dir/$filename\n"; next MODULE;
+               }
 	    }
 	}
+       warn "Warning: couldn't find anything to load for 'mod_$module'.\n";
     }
-		      
-    print "found the following modules: \n@modules";
+    
+    print "Adding the following dynamic config lines: \n@modules";
     return join '', @modules;
+}
+
+sub static_modules {
+    # Returns a hashref whose keys are each of the modules compiled
+    # statically into the given httpd binary.
+    my ($self, $httpd) = @_;
+
+    my @l = `$httpd -l`;
+    return {map {lc($_) => 1} map /(\S+)\.c/, @l};
 }
 
 # Find an executable in the PATH.
@@ -238,8 +201,6 @@ sub which {
 	return $_ if -x;
     }
 }
-
-################# Methods that happen at "make test" time #########################
 
 sub test { 
     shift() if UNIVERSAL::isa($_[0], __PACKAGE__);
@@ -254,11 +215,13 @@ sub test {
 
 sub fetch {
     # Old code calls fetch() as a function, new code as a method
-    shift() if UNIVERSAL::isa($_[0], __PACKAGE__);
+    my $want_response;
+    $want_response = shift() if UNIVERSAL::isa($_[0], __PACKAGE__);
     my ($ua, $url) = (@_ == 1 ? ($UA, shift()) : @_);
     my $request = ref $url ? $url : {uri=>$url};
 
     # Set some defaults
+    $ENV{PORT} ||= 8529;  # For mod_perl's own tests
     $request->{method} ||= 'GET';
     $request->{content} = '' unless exists $request->{content};
     $request->{uri} = "http://localhost:$ENV{PORT}$request->{uri}"    
@@ -271,7 +234,7 @@ sub fetch {
     my $req = new HTTP::Request(@{$request}{'method','uri','headers','content'});
     my $response = $ua->request($req);
 
-    return wantarray ? ($response->content, $response) : $response->content;
+    return $want_response ? $response : $response->content;
 }
 
 sub simple_fetch {
@@ -389,6 +352,46 @@ sub run {
     }
 
     Test::Harness::runtests(@tests);
+}
+
+sub MM_test {
+    # Writes the test section for the Makefile
+    shift();  # Don't need package name
+    my %conf = @_;
+
+    my $section = <<EOF;
+TEST_VERBOSE=0
+TEST_TYPE=test_\$(LINKTYPE)
+TEST_FILE = test.pl
+TEST_FILES = t/*.t
+TESTDB_SW = -d
+
+#test:	start_httpd run_tests   kill_httpd
+
+test :: pure_all start_httpd run_tests   kill_httpd
+
+testdb:	start_httpd run_testsdb kill_httpd
+
+kill_httpd:
+	kill `cat t/httpd.pid`
+
+start_httpd:
+	t/httpd -f `pwd`/t/httpd.conf
+
+run_tests :: pure_all
+	PERL_DL_NONLAZY=1 PORT=$conf{port}
+EOF
+    chomp $section;
+
+    $section .= <<'EOF';
+ $(FULLPERL) -I$(INST_ARCHLIB) -I$(INST_LIB) -I$(PERL_ARCHLIB) -I$(PERL_LIB) -e 'use Test::Harness qw(&runtests $$verbose); $$verbose=$(TEST_VERBOSE); runtests @ARGV;' $(TEST_FILES)
+
+run_testsdb :: pure_all
+	PERL_DL_NONLAZY=1 $(FULLPERL) $(TESTDB_SW) -I$(INST_ARCHLIB) -I$(INST_LIB) -I$(PERL_ARCHLIB) -I$(PERL_LIB) $(TEST_FILE)
+
+EOF
+
+    return $section;
 }
 
 sub grab {
@@ -630,6 +633,14 @@ In a scalar context, fetch() returns the content of the web server's
 response.  In a list context, fetch() returns the content and the
 HTTP::Response object itself.  This can be handy if you need to check
 the response headers, or the HTTP return code, or whatever.
+
+=head2 static_modules
+
+ Example: $mods = Apache::test->static_modules('/path/to/httpd');
+
+This method returns a hashref whose keys are all the modules
+statically compiled into the given httpd binary.  The corresponding
+values are all 1.
 
 =head1 EXAMPLES
 

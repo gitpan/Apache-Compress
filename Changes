@@ -1,3 +1,12 @@
+Version: 1.003  Date: 2000/11/05 05:36:46
+   Updated code to work with Apache::Filter 1.013 and greater.  If you're
+   using Apache::Filter 1.012 or lower, you must use 2.14 or lower of
+   Apache::Compress.  If you don't use Apache::Filter, you don't need to
+   care.
+   
+   Added Compress::Zlib to the PREREQ_PM list in Makefile.PL.
+
+
 Version: 1.002  Date: 2000/08/22 05:30:11
    First release.  Rewrote code to be a bit cleaner.  Changed name from
    Apache::Gzip to Apache::Compress, because Apache::Gzip is taken by a

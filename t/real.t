@@ -43,7 +43,8 @@ sub decomp {
 }
 
 sub test_outcome {
-  my ($content, $response, $i) = @_;
+  my ($response, $i) = @_;
+  my $content = $response->content;
   
   my $expected;
   if ($special_tests{$i}{content}) {

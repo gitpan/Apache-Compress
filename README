@@ -1,3 +1,6 @@
+NAME
+    Apache::Compress - Auto-compress web files with Gzip
+
 SYNOPSIS
       PerlModule Apache::Compress
       

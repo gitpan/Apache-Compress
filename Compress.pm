@@ -6,13 +6,14 @@ use Apache::File;
 use Apache::Constants qw(:common);
 use vars qw($VERSION);
 
-$VERSION = sprintf '%d.%03d', q$Revision: 1.2 $ =~ /: (\d+).(\d+)/;
+$VERSION = sprintf '%d.%03d', q$Revision: 1.3 $ =~ /: (\d+).(\d+)/;
 
 sub handler {
   my $r = shift;
 
   my $can_gzip = $r->header_in('Accept-Encoding') =~ /gzip/;
   my $filter   = lc $r->dir_config('Filter') eq 'on';
+  #warn "can_gzip=$can_gzip, filter=$filter";
   return DECLINED unless $can_gzip or $filter;
   
   # Other people's eyes need to check this 1.1 stuff.
@@ -24,22 +25,23 @@ sub handler {
     $r->header_out('Vary' => join ',', keys %vary);
   }
   
-  my $fh = ($filter ? $r->filter_input() : Apache::File->new($r->filename));
+  my $fh;
+  if ($filter) {
+    $r = $r->filter_register;
+    $fh = $r->filter_input();
+  } else {
+    $fh = Apache::File->new($r->filename);
+  }
   return SERVER_ERROR unless $fh;
   
   if ($can_gzip) {
     $r->content_encoding('gzip');
-    $r->send_http_header unless $filter;
+    $r->send_http_header;
     local $/;
     print Compress::Zlib::memGzip(<$fh>);
   } else {
-    if ($filter) {
-      print while <$fh>;
-    } else {
-      # Much faster if we don't need to filter things
-      $r->send_http_header;
-      $r->send_fd($fh);
-    }
+    $r->send_http_header;
+    $r->send_fd($fh);
   }
   
   return OK;
@@ -73,10 +75,10 @@ sub handler {
 #    print $content;
 
 __END__
-  
+
 =head1 NAME
 
-  Apache::Compress - Auto-compress web files with Gzip
+Apache::Compress - Auto-compress web files with Gzip
 
 =head1 SYNOPSIS
 
