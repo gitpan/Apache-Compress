@@ -1,0 +1,14 @@
+Version: 1.002  Date: 2000/08/22 05:30:11
+   First release.  Rewrote code to be a bit cleaner.  Changed name from
+   Apache::Gzip to Apache::Compress, because Apache::Gzip is taken by a
+   sample module in the Eagle book.
+   
+   Wrote some bare-bones documentation, but it probably needs more.
+
+
+Version: 1.001  Date: 2000/05/31 01:43:20
+   First revision.  Based on code that Geoffrey Young and Philippe
+   Chiasson were working on a while back, but abandoned.  They based
+   theirs on Apache::GzipChain.
+
+
