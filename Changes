@@ -1,5 +1,10 @@
 Revision history for Perl extension Apache::Compress
 
+1.005  Wed Nov 17 13:59:58 CST 2004
+
+ - Fixed the documentation by adding a 'SetHandler perl-script' line
+   to each example. [Andy Lester]
+
 1.004  Sun Apr 18 21:37:16 CDT 2004
 
  - Added the 'CompressDecision' configuration variable to control how

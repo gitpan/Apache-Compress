@@ -6,7 +6,7 @@ use Apache::File;
 use Apache::Constants qw(:common);
 use vars qw($VERSION);
 
-$VERSION = '1.004';
+$VERSION = '1.005';
 
 sub handler {
   my $r = shift;
@@ -103,18 +103,21 @@ Apache::Compress - Auto-compress web files with Gzip
   # Compress regular files - decides whether to compress by
   # examining the Accept-Encoding header
   <FilesMatch "\.blah$">
+   SetHandler perl-script
    PerlHandler Apache::Compress
   </FilesMatch>
   
   # Compress output of Perl scripts
   PerlModule Apache::Filter
   <FilesMatch "\.pl$">
+   SetHandler perl-script
    PerlSetVar Filter on
    PerlHandler Apache::RegistryFilter Apache::Compress
   </FilesMatch>
   
   # Guess based on user-agent
   <FilesMatch "\.blah$">
+   SetHandler perl-script
    PerlSetVar CompressDecision User-Agent
    PerlHandler Apache::Compress
   </FilesMatch>
